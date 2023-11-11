@@ -16,13 +16,14 @@ public class EventBus {
 		subscribers = new HashMap<>();
 	}
 	
-	public boolean subscribeEvent(Class<? extends BaseEvent> eventClass, BiConsumer<EventBus, BaseEvent> consumer) {
+	@SuppressWarnings("unchecked")
+	public <T extends BaseEvent> boolean subscribeEvent(Class<T> eventClass, BiConsumer<EventBus, T> consumer) {
 		Array<BiConsumer<EventBus, BaseEvent>> consumers = subscribers.getOrDefault(eventClass, null);
 		if(consumers == null) {
 			consumers = new Array<>();
 			subscribers.put(eventClass, consumers);
 		}
-		consumers.add(consumer);
+		consumers.add((BiConsumer<EventBus, BaseEvent>) consumer);
 		return true;
 	}
 	
@@ -36,6 +37,8 @@ public class EventBus {
 		if(params[0] != getClass()) return false;
 		if(params[1] != eventClass) return false;
 		if(method.getReturnType() != void.class) return false;
+		
+		System.out.println("Registered event listener " + eventClass.getName() + "." + method.getName());
 		
 		return subscribeEvent(eventClass, (bus, event) -> {
 			try {
@@ -52,7 +55,7 @@ public class EventBus {
 	
 	@SuppressWarnings("unchecked")
 	public boolean subscribeEventListener(Class<?> eventListenerClass) {
-		Method[] methods = ClassReflection.getMethods(eventListenerClass);
+		Method[] methods = ClassReflection.getDeclaredMethods(eventListenerClass);
 		boolean atLeastOne = false;
 		for(Method method : methods) {
 			if(!method.isStatic() || method.isAbstract()) continue;
@@ -85,7 +88,7 @@ public class EventBus {
 	
 	@SuppressWarnings("unchecked")
 	public <T> boolean subscribeEventListener(T eventListener) {
-		Method[] methods = ClassReflection.getMethods(eventListener.getClass());
+		Method[] methods = ClassReflection.getDeclaredMethods(eventListener.getClass());
 		boolean atLeastOne = false;
 		for(Method method : methods) {
 			if(method.isStatic() || method.isAbstract()) continue;

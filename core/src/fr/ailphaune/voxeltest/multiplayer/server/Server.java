@@ -27,6 +27,7 @@ import fr.ailphaune.voxeltest.data.ChunkPos;
 import fr.ailphaune.voxeltest.data.Registries;
 import fr.ailphaune.voxeltest.data.VoxelPos;
 import fr.ailphaune.voxeltest.data.collections.SynchronizedHashSet;
+import fr.ailphaune.voxeltest.data.world.Chunk;
 import fr.ailphaune.voxeltest.data.world.World;
 import fr.ailphaune.voxeltest.entities.PlayerEntity;
 import fr.ailphaune.voxeltest.events.BaseEvent;
@@ -47,6 +48,7 @@ import fr.ailphaune.voxeltest.multiplayer.packet.s2c.JoinWorldPacket;
 import fr.ailphaune.voxeltest.multiplayer.packet.s2c.VoxelUpdatesPacket;
 import fr.ailphaune.voxeltest.multiplayer.packet.s2c.WorldChunkPacket;
 import fr.ailphaune.voxeltest.multiplayer.server.events.ClientPreConnectEvent;
+import fr.ailphaune.voxeltest.multiplayer.server.events.ServerChunkLoadedEvent;
 import fr.ailphaune.voxeltest.registries.Identifier;
 import fr.ailphaune.voxeltest.utils.io.BetterByteArrayOutputStream;
 import fr.ailphaune.voxeltest.utils.io.ByteBufferInputStream;
@@ -61,7 +63,6 @@ public class Server extends Thread {
 	private int maxPSize = 4 * 1024 * 1024; // Default max packet size: 4Mb
 	private int connectionTimeout = 15 * 1000; // 15 seconds before closing the connection if no ClientConnectionPacket
 												// is received
-
 	public final World world;
 
 	public boolean open = false;
@@ -80,11 +81,13 @@ public class Server extends Thread {
 		setPriority(Thread.MAX_PRIORITY);
 		this.port = port;
 		this.world = world;
+		world.ticker.useServer(this);
 
 		addPacketListener(Packets.CLIENT_CONNECTION, this::onClientInitConnection);
 		addPacketListener(Packets.PLAYER_MOVE_PACKET, this::onPlayerMovePacket);
 		addPacketListener(Packets.DESTROY_VOXEL, this::onPlayerDestroyPacket);
 		addPacketListener(Packets.PLACE_VOXEL, this::onPlayerPlacePacket);
+		
 	}
 
 	public Server(World world, int port, int maxPacketSize) {
@@ -181,6 +184,10 @@ public class Server extends Thread {
 		return lcc;
 	}
 
+	public void tick() {
+		
+	}
+	
 	/**
 	 * Returns the {@link Client} associated to this server's
 	 * {@link LocalClientConnection}. <br>
@@ -350,12 +357,25 @@ public class Server extends Thread {
 		sendVoxelUpdate(u);
 	}
 	
+	protected void onChunkLoaded(EventBus bus, ServerChunkLoadedEvent event) {
+		sendChunkUpdate(event.chunk);
+	}
+	
 	public void sendVoxelUpdate(VoxelUpdatesPacket.Update update) {
 		ChunkPos pos = tempVoxelPos_1.set(update.x, update.y, update.z).getChunkPos(tempChunkPos_1);
 		HashSet<ClientConnection> interested = chunkInterest.getOrDefault(pos, null);
 		if(interested != null) {
 			for(ClientConnection connection : interested) {
 				connection.sendUpdate(update);
+			}
+		}
+	}
+	
+	public void sendChunkUpdate(Chunk chunk) {
+		HashSet<ClientConnection> interested = chunkInterest.getOrDefault(chunk.getChunkPos(), null);
+		if(interested != null) {
+			for(ClientConnection connection : interested) {
+				connection.sendChunk(chunk);
 			}
 		}
 	}
@@ -426,6 +446,8 @@ public class Server extends Thread {
 
 	@Override
 	public void run() {
+		SERVER_EVENTS.subscribeEvent(ServerChunkLoadedEvent.class, this::onChunkLoaded);
+		
 		VoxelTestGame.GAME_LIFECYCLE_EVENT_BUS.dispatchEvent(new ServerStartEvent(this));
 		SERVER_EVENTS.dispatchEvent(new ServerStartEvent(this));
 
@@ -442,7 +464,7 @@ public class Server extends Thread {
 					connection.parsePackets();
 				}
 
-				Thread.sleep(50);
+				Thread.sleep(20);
 			} catch (InterruptedException e) {
 				e.printStackTrace();
 			} catch (IOException e) {
@@ -756,9 +778,8 @@ public class Server extends Thread {
 						ChunkPos pos = onlinePlayer.entity.getVoxelPos(tempVoxelPos).getChunkPos(new ChunkPos()).add(dx, dy, dz);
 						if (acquiredChunks.contains(pos) || !onlinePlayer.loadRegion.keepsChunkLoaded(pos))
 							continue;
-						WorldChunkPacket.Data data = Packets.WORLD_CHUNK.fromChunk(world.getChunk(pos));
-						sendPacket(data);
-						acquiredChunks.add(pos);
+						Chunk chunk = world.getChunk(pos);
+						sendChunk(chunk);
 					}
 				}
 			}
@@ -892,6 +913,12 @@ public class Server extends Thread {
 			synchronized(pendingUpdates) {
 				pendingUpdates.add(update);
 			}
+		}
+		
+		public void sendChunk(Chunk chunk) {
+			WorldChunkPacket.Data data = Packets.WORLD_CHUNK.fromChunk(chunk);
+			sendPacket(data);
+			acquiredChunks.add(chunk.getChunkPos());
 		}
 	}
 

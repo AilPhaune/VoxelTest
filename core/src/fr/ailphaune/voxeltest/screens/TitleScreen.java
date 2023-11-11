@@ -16,6 +16,7 @@ import com.badlogic.gdx.utils.viewport.ScreenViewport;
 
 import fr.ailphaune.voxeltest.VoxelTestGame;
 import fr.ailphaune.voxeltest.data.world.World;
+import fr.ailphaune.voxeltest.files.GameFiles;
 import fr.ailphaune.voxeltest.light.Lighting;
 import fr.ailphaune.voxeltest.multiplayer.server.Server;
 
@@ -48,7 +49,7 @@ public class TitleScreen extends ScreenAdapter {
 			public void changed(ChangeEvent event, Actor actor) {
 				if(singlePlayer.isChecked()) event.cancel();
 				try {
-					Server server = VoxelTestGame.getInstance().createServer(new World(115, new Lighting(), true), 12345);
+					Server server = VoxelTestGame.getInstance().createServer(new World(115, new Lighting(), true, GameFiles.getSavesFolder().child("world1")), 12345);
 					server.start();
 					server.open();
 					Screens.GAME_SCREEN.client = VoxelTestGame.getInstance().createConnectedLocalClient();

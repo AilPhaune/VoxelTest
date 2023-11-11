@@ -10,9 +10,9 @@ VoxelTest is a simple multiplayer 3D voxel game that contains basic blocks, incl
 
 ## Planed features
 
-- An actual user interface
-- Integrated world-saving functionality to preserve your progress seamlessly
+- Make the world save code more optimized for faster world loading and saving times
 - Comprehensive modding support for enhanced customizability
+- An actual user interface
 
 ## Installation
 

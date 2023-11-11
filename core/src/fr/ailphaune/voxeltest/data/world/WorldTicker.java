@@ -1,6 +1,9 @@
 package fr.ailphaune.voxeltest.data.world;
 
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import fr.ailphaune.voxeltest.multiplayer.server.Server;
 
 public class WorldTicker extends Thread {
 	
@@ -10,6 +13,10 @@ public class WorldTicker extends Thread {
 	public final AtomicBoolean stop;
 	
 	private long nextTickTime;
+	
+	private long tickCount = 0;
+	
+	private Server server;
 	
 	public WorldTicker(World world, int targetTPS) {
 		super("WorldTicker");
@@ -32,7 +39,40 @@ public class WorldTicker extends Thread {
 				}
 			}
 			nextTickTime = System.nanoTime() + (1_000_000_000L / targetTPS);
+			
 			world.tick();
+			if(hasServer()) server.tick();
+			
+			tickCount++;
 		}
+	}
+	
+	public long getTickCount() {
+		return tickCount;
+	}
+	
+	public void setTickCount(long newTicks) {
+		tickCount = newTicks;
+	}
+	
+	public long getTickAmountForNanos(long nanos) {
+		return (nanos * targetTPS) / 1_000_000_000L;
+	}
+
+	public long getTickAmountForDuration(long amount, TimeUnit unit) {
+		return getTickAmountForNanos(TimeUnit.NANOSECONDS.convert(amount, unit));
+	}
+
+	public void useServer(Server server) {
+		if(this.server != null) throw new IllegalStateException("WorldTicker already associated to a Server");
+		this.server = server;
+	}
+	
+	public boolean hasServer() {
+		return this.server != null;
+	}
+	
+	public Server getServer() {
+		return server;
 	}
 }

@@ -7,7 +7,9 @@ import java.util.List;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
+import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.graphics.Camera;
 import com.badlogic.gdx.math.RandomXS128;
 import com.badlogic.gdx.math.Vector3;
@@ -18,7 +20,9 @@ import fr.ailphaune.voxeltest.data.ChunkPos;
 import fr.ailphaune.voxeltest.data.VoxelPos;
 import fr.ailphaune.voxeltest.data.VoxelTarget;
 import fr.ailphaune.voxeltest.light.Lighting;
+import fr.ailphaune.voxeltest.multiplayer.server.events.ServerChunkLoadedEvent;
 import fr.ailphaune.voxeltest.render.voxel.VoxelIntersect;
+import fr.ailphaune.voxeltest.saves.WorldSaver;
 import fr.ailphaune.voxeltest.voxels.Voxels;
 import fr.ailphaune.voxeltest.worldgen.WorldGenerator;
 
@@ -45,12 +49,12 @@ public class World implements Disposable {
 	protected ChunkPos tempChunkPos = new ChunkPos();
 	protected VoxelPos tempVoxelPos = new VoxelPos();
 
+	protected WorldSaver saver;
 	protected WorldGenerator generator;
 	protected Lighting lighting;
 
 	protected Set<Chunk> relightQueue;
-
-	protected Set<Chunk> chunkSaveQueue;
+	protected ConcurrentLinkedQueue<Runnable> worldGenTasks = new ConcurrentLinkedQueue<>();
 
 	public final List<WorldLoadRegion> loadRegions;
 
@@ -64,7 +68,6 @@ public class World implements Disposable {
 		this.loadRegions = new ArrayList<WorldLoadRegion>();
 
 		relightQueue = new HashSet<>();
-		chunkSaveQueue = new HashSet<>();
 
 		if (serverWorld) {
 			RandomXS128 random = new RandomXS128(seed);
@@ -78,7 +81,22 @@ public class World implements Disposable {
 		} else {
 			this.ticker = null;
 			this.generator = null;
+			this.saver = null;
 		}
+	}
+
+	public World(long seed, Lighting lighting, boolean serverWorld, FileHandle saveDirectory) {
+		this(seed, lighting, serverWorld);
+		setSaveDirectory(saveDirectory);
+	}
+
+	public void setSaveDirectory(FileHandle directory) {
+		if (isClient())
+			return;
+		if (saver != null)
+			saver.dispose();
+		assert directory.isDirectory();
+		saver = new WorldSaver(this, directory);
 	}
 
 	public boolean isServer() {
@@ -100,18 +118,37 @@ public class World implements Disposable {
 		return seed;
 	}
 
-	public synchronized Chunk getChunk(int chunkX, int chunkY, int chunkZ) {
+	public Chunk createEmptyChunk(ChunkPos pos) {
+		return new Chunk(pos.x, pos.y, pos.z, this);
+	}
+
+	public Chunk getChunk(int chunkX, int chunkY, int chunkZ) {
 		ChunkPos pos = new ChunkPos(chunkX, chunkY, chunkZ);
 		Chunk chunk = loaded_chunks.getOrDefault(pos, null);
 		if (chunk != null)
 			return chunk;
-		chunk = new Chunk(chunkX, chunkY, chunkZ, this);
-		addLoadedChunk(chunk);
-		generateChunk(chunk);
+
+		chunk = createEmptyChunk(pos);
+
+		if (isClient()) {
+			addLoadedChunk(chunk);
+			return chunk;
+		}
+
+		Chunk loadedChunk = saver.loadChunk(chunk);
+		synchronized(chunk) {
+			if (loadedChunk == null) {
+				generateChunk(chunk);
+			} else {
+				addLoadedChunk(loadedChunk);
+				chunk = loadedChunk;
+			}
+		}
+		
 		return chunk;
 	}
 
-	public synchronized Chunk getLoadedChunk(int chunkX, int chunkY, int chunkZ) {
+	public Chunk getLoadedChunk(int chunkX, int chunkY, int chunkZ) {
 		ChunkPos pos = new ChunkPos(chunkX, chunkY, chunkZ);
 		return loaded_chunks.getOrDefault(pos, null);
 	}
@@ -169,7 +206,8 @@ public class World implements Disposable {
 		Chunk modifiedChunk = getChunk(tempChunkPos);
 
 		modifiedChunk.setFast(tempVoxelPos.x, tempVoxelPos.y, tempVoxelPos.z, voxel);
-
+		saveChunk(modifiedChunk);
+		
 		for (int X = -1; X <= 1; X++) {
 			for (int Y = -1; Y <= 1; Y++) {
 				for (int Z = -1; Z <= 1; Z++) {
@@ -193,6 +231,7 @@ public class World implements Disposable {
 		Chunk modifiedChunk = getChunk(tempChunkPos);
 
 		modifiedChunk.setStateFast(tempVoxelPos.x, tempVoxelPos.y, tempVoxelPos.z, state);
+		saveChunk(modifiedChunk);
 
 		for (int X = -1; X <= 1; X++) {
 			for (int Y = -1; Y <= 1; Y++) {
@@ -312,11 +351,11 @@ public class World implements Disposable {
 			return;
 		}
 
+		System.out.println("Generated chunk " + chunk.getChunkPos());
 		generator.proceduralGenerateChunk(chunk);
 		lighting.calculateLight(this, chunk);
-
+		
 		addLoadedChunk(chunk);
-		chunkSaveQueue.add(chunk);
 	}
 
 	public synchronized void tryUnloadChunks() throws IOException {
@@ -327,8 +366,13 @@ public class World implements Disposable {
 			}
 		}
 		for (Chunk chunk : unload) {
-			loaded_chunks.remove(chunk.getChunkPos());
+			unload(chunk);
 		}
+	}
+
+	public synchronized void unload(Chunk chunk) {
+		saveChunk(chunk);
+		loaded_chunks.remove(chunk.getChunkPos());
 	}
 
 	public boolean isValidChunk(ChunkPos pos) {
@@ -339,28 +383,52 @@ public class World implements Disposable {
 		return isValidChunk(pos.getChunkPos(tempChunkPos));
 	}
 
+	public void saveChunk(Chunk chunk) {
+		if (saver != null)
+			saver.saveChunk(chunk);
+	}
+
 	@Override
 	public void dispose() {
 		if (ticker != null)
 			ticker.stop.set(true);
-		chunkSaveQueue.clear();
+		if (saver != null)
+			saver.dispose();
 		loaded_chunks.clear();
 		relightQueue.clear();
 	}
 
 	public void addLoadedChunk(Chunk sourceChunk) {
+		if(ticker != null && ticker.hasServer()) {
+			ticker.getServer().getEventBus().dispatchEvent(new ServerChunkLoadedEvent(sourceChunk));
+		}
+		
 		loaded_chunks.put(sourceChunk.getChunkPos(), sourceChunk);
 		sourceChunk.needsRelighting = true;
+		saveChunk(sourceChunk);
 	}
 
+	private long lastSave = 0;
 	public synchronized void tick() {
+		Runnable task;
+
 		try {
 			tryUnloadChunks();
+			long now = System.nanoTime();
+			if(saver != null && now - lastSave >= 10_000_000_000L) {
+				saver.saveRegions();
+				lastSave = System.nanoTime();
+				System.out.println("Saved world");
+			}
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
 		calculateLightQueue();
-		chunkSaveQueue.clear();
+
+		while ((task = worldGenTasks.poll()) != null) {
+			task.run();
+		}
+
 		// System.out.println("TICK");
 	}
 

@@ -7,6 +7,7 @@ import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration;
 public class DesktopLauncher {
 	
 	public static void main(String[] args) {
+		Thread.currentThread().setPriority(Thread.MAX_PRIORITY);
 		final boolean debugMode = args.length > 0 && "--debug".equals(args[0]);
 		
 		Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();

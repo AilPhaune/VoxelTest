@@ -30,7 +30,7 @@ public class Chunk {
 	public boolean needsRemeshing = false;
 	public boolean needsRelighting = false;
 	
-	private ChunkPos chunkPos;
+	private ChunkPos chunkPos, tempThisChunkPos = new ChunkPos();
 	
 	public final long chunkSeed;
 	
@@ -138,7 +138,7 @@ public class Chunk {
 	}
 
 	public ChunkPos getChunkPos() {
-		return chunkPos;
+		return tempThisChunkPos.set(chunkPos);
 	}
 	
 	public void setVoxels(byte[] voxels) {

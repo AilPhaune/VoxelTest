@@ -34,7 +34,9 @@ public class ClientWorld extends World {
 	
 	public void clear() {
 		relightQueue.clear();
-		chunkSaveQueue.clear();
 		loaded_chunks.clear();
+		if(saver != null) {
+			saver.clear();
+		}
 	}
 }

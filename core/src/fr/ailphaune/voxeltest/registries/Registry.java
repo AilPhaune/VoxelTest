@@ -33,7 +33,10 @@ public class Registry<T extends Registrable<T>> implements Disposable {
 	
 	public synchronized T get(int index) {
 		if(indexMap == null) throw new IllegalStateException("Registry is disposed");
-		return index >= indexMap.size() || index < 0 ? null : indexMap.get(index);
+		if(index >= indexMap.size() || index < 0) {
+			return null;
+		}
+		return indexMap.get(index);
 	}
 	
 	public synchronized T get(Identifier id, T def) {

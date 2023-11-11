@@ -9,6 +9,7 @@ import com.badlogic.gdx.math.Vector3;
 
 import fr.ailphaune.voxeltest.data.ChunkPos;
 import fr.ailphaune.voxeltest.data.VoxelPos;
+import fr.ailphaune.voxeltest.saves.RegionPos;
 
 public class ExtendedDataOutputStream extends DataOutputStream {
 
@@ -83,6 +84,12 @@ public class ExtendedDataOutputStream extends DataOutputStream {
 	}
 	
 	public void writeVoxelPos(VoxelPos pos) throws IOException {
+		writeInt(pos.x);
+		writeInt(pos.y);
+		writeInt(pos.z);
+	}
+	
+	public void writeRegionPos(RegionPos pos) throws IOException {
 		writeInt(pos.x);
 		writeInt(pos.y);
 		writeInt(pos.z);

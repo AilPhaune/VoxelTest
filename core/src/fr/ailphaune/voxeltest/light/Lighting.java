@@ -207,6 +207,9 @@ public class Lighting {
 					for(int z = 0; z < Chunk.SIZE; z++) {
 						boolean added = false;
 						AbstractVoxel voxel = Voxels.getAbstractVoxel(chunk.get(x, y, z));
+						if(voxel == null) {
+							continue;
+						}
 						short light = voxel.getLightLevel(chunk, chunk.getVoxelPos(x, y, z, tempVoxelPos));
 						if(light != 0 && !added) {
 							LIGHT_QUEUE.addLast(tempVoxelPos);
